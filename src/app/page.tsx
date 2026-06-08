@@ -112,7 +112,7 @@ export default function Home() {
       // 🔥 [핵심 추가] Set을 이용해 중복된 토큰 ID를 깔끔하게 하나로 압축합니다.
       const uniqueTokenIds = Array.from(
         new Set(tokenIds.map((id: any) => id.toString())),
-      )
+      ) as string[]
 
       const items = await Promise.all(
         uniqueTokenIds.map(async (id: string) => {
