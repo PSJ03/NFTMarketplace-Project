@@ -31,6 +31,55 @@ interface MyNFTItem {
   price: string
 }
 
+// 🔥 [추가 1] 네트워크 검증 및 강제 전환 함수
+async function checkAndSwitchNetwork() {
+  if (!window.ethereum) throw new Error('MetaMask가 설치되어 있지 않습니다.')
+  const currentChainId = await window.ethereum.request({
+    method: 'eth_chainId',
+  })
+  const sepoliaChainId = '0xaa36a7' // Sepolia 체인 ID (Hex)
+
+  if (currentChainId !== sepoliaChainId) {
+    try {
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: sepoliaChainId }],
+      })
+    } catch (error: any) {
+      if (error.code === 4902) {
+        throw new Error(
+          'Sepolia 테스트넷이 메타마스크에 없습니다. 수동으로 추가해 주세요.',
+        )
+      } else {
+        throw new Error('네트워크 전환이 거부되었거나 실패했습니다.')
+      }
+    }
+  }
+}
+
+// 🔥 [추가 2] 공통 에러 핸들링 함수 (원인을 화면에 정확히 표시)
+function handleTxError(error: any, defaultMsg: string) {
+  console.error(error)
+  const msg = error?.message?.toLowerCase() || ''
+  if (error?.code === 4001 || msg.includes('user rejected')) {
+    alert('사용자가 메타마스크에서 트랜잭션을 거절했습니다.')
+  } else if (msg.includes('insufficient funds')) {
+    alert(
+      '지갑에 가스비(Sepolia ETH)가 부족하여 트랜잭션을 실행할 수 없습니다.',
+    )
+  } else if (msg.includes('nonce too low')) {
+    alert(
+      '이전 트랜잭션이 꼬였습니다. 메타마스크 [고급 설정]에서 [활동 탭 데이터 지우기]를 실행해 주세요.',
+    )
+  } else if (error?.message) {
+    alert(`${error.message}`) // checkAndSwitchNetwork 등에서 던진 커스텀 에러 표시
+  } else {
+    alert(
+      `${defaultMsg}: ${error?.reason || error?.message || '알 수 없는 오류 발생'}`,
+    )
+  }
+}
+
 export default function Home() {
   const [account, setAccount] = useState<string>('')
   const [marketContract, setMarketContract] = useState<ethers.Contract | null>(
@@ -42,14 +91,12 @@ export default function Home() {
   )
 
   const [nfts, setNfts] = useState<NFTItem[]>([])
-  // 🔥 내 소유 NFT 상태 추가
   const [myNfts, setMyNfts] = useState<MyNFTItem[]>([])
 
   const [mintPrice, setMintPrice] = useState<string>('')
   const [transferAddress, setTransferAddress] = useState<string>('')
   const [transferAmount, setTransferAmount] = useState<string>('')
 
-  // 🔥 탭 상태에 'mywallet' 추가
   const [currentTab, setCurrentTab] = useState<
     'home' | 'mint' | 'market' | 'faucet' | 'mywallet'
   >('home')
@@ -108,8 +155,6 @@ export default function Home() {
     if (!marketContract) return
     try {
       const tokenIds = await marketContract.fetchListedNFTs()
-
-      // 🔥 [핵심 추가] Set을 이용해 중복된 토큰 ID를 깔끔하게 하나로 압축합니다.
       const uniqueTokenIds = Array.from(
         new Set(tokenIds.map((id: any) => id.toString())),
       ) as string[]
@@ -131,7 +176,6 @@ export default function Home() {
     }
   }, [marketContract])
 
-  // 🔥 내 지갑의 NFT를 불러오는 함수 추가 (ERC721Enumerable 활용)
   const fetchMyNFTs = useCallback(async () => {
     if (!nftContract || !marketContract || !account) return
     try {
@@ -140,7 +184,6 @@ export default function Home() {
 
       for (let i = 0; i < Number(balance); i++) {
         const tokenId = await nftContract.tokenOfOwnerByIndex(account, i)
-        // 해당 토큰이 마켓에 올라가 있는지 상태 확인
         const listing = await marketContract.getListing(tokenId)
         items.push({
           tokenId: tokenId.toString(),
@@ -156,7 +199,7 @@ export default function Home() {
 
   useEffect(() => {
     fetchItems()
-    fetchMyNFTs() // 앱 로드 시 내 NFT도 같이 불러옴
+    fetchMyNFTs()
   }, [fetchItems, fetchMyNFTs])
 
   async function connectWallet() {
@@ -194,6 +237,7 @@ export default function Home() {
   async function handleFreeFaucet() {
     if (!tokenContract || !account) return alert('지갑을 연결해주세요.')
     try {
+      await checkAndSwitchNetwork() // 🔥 네트워크 확인 추가
       const amount = ethers.parseEther('1000')
       alert(
         '테스트 토큰(1,000 Token) 무상 발급을 신청합니다. 메타마스크 승인을 진행해주세요.',
@@ -203,8 +247,7 @@ export default function Home() {
       alert('🎉 지갑으로 1,000 테스트 토큰이 정상 지급되었습니다!')
       fetchBalance()
     } catch (error: any) {
-      console.error(error)
-      alert(`발급 실패: ${error.reason || error.message}`)
+      handleTxError(error, '발급 실패') // 🔥 공통 에러 핸들링
     }
   }
 
@@ -213,6 +256,7 @@ export default function Home() {
     if (!transferAddress || !transferAmount)
       return alert('받을 지갑 주소와 전송할 수량을 모두 입력해주세요.')
     try {
+      await checkAndSwitchNetwork() // 🔥 네트워크 확인 추가
       const amount = ethers.parseEther(transferAmount)
       alert(
         `${transferAmount} Token 송금을 시작합니다. 메타마스크 승인을 진행해주세요.`,
@@ -224,8 +268,7 @@ export default function Home() {
       setTransferAmount('')
       fetchBalance()
     } catch (error: any) {
-      console.error(error)
-      alert(`송금 실패: ${error.reason || error.message}`)
+      handleTxError(error, '송금 실패') // 🔥 공통 에러 핸들링
     }
   }
 
@@ -233,6 +276,7 @@ export default function Home() {
     if (!nftContract || !marketContract) return alert('지갑 먼저 연결하세요!')
     if (!mintPrice) return alert('판매 가격을 입력하세요!')
     try {
+      await checkAndSwitchNetwork() // 🔥 네트워크 확인 추가
       const dummyURI = 'https://example.com/nft-metadata.json'
       const tx1 = await nftContract.safeMint(account, dummyURI)
       await tx1.wait()
@@ -258,8 +302,7 @@ export default function Home() {
       fetchMyNFTs()
       setCurrentTab('market')
     } catch (error: any) {
-      console.error(error)
-      alert(`등록 실패: ${error.reason || error.message}`)
+      handleTxError(error, '등록 실패') // 🔥 공통 에러 핸들링
     }
   }
 
@@ -267,6 +310,7 @@ export default function Home() {
     if (!marketContract || !tokenContract)
       return alert('지갑 연결을 확인해주세요.')
     try {
+      await checkAndSwitchNetwork() // 🔥 네트워크 확인 추가
       const priceInWei = ethers.parseEther(price)
       alert(
         '결제를 위해 지출 한도 승인이 필요합니다. 메타마스크 창이 뜨면 금액을 입력하고 승인해주세요.',
@@ -280,17 +324,17 @@ export default function Home() {
 
       alert('🎉 구매 성공! NFT 소유권이 이전되었습니다.')
       fetchItems()
-      fetchMyNFTs() // 구매 완료 후 내 지갑 갱신
+      fetchMyNFTs()
       fetchBalance()
     } catch (error: any) {
-      console.error(error)
-      alert(`구매 실패: ${error.reason || error.message}`)
+      handleTxError(error, '구매 실패') // 🔥 공통 에러 핸들링
     }
   }
 
   async function handleCancelListing(tokenId: string) {
     if (!marketContract) return alert('지갑 연결을 확인해주세요.')
     try {
+      await checkAndSwitchNetwork() // 🔥 네트워크 확인 추가
       alert('판매 등록을 취소합니다. 메타마스크 승인을 진행해주세요.')
       const tx = await marketContract.cancelListing(tokenId)
       await tx.wait()
@@ -299,12 +343,10 @@ export default function Home() {
       fetchItems()
       fetchMyNFTs()
     } catch (error: any) {
-      console.error(error)
-      alert(`취소 실패: ${error.reason || error.message}`)
+      handleTxError(error, '취소 실패') // 🔥 공통 에러 핸들링
     }
   }
 
-  // 🔥 [기능 추가] 구매한 NFT 재판매(Resell) 로직
   async function handleResellNFT(tokenId: string) {
     if (!nftContract || !marketContract)
       return alert('지갑 연결을 확인해주세요.')
@@ -319,8 +361,8 @@ export default function Home() {
     }
 
     try {
+      await checkAndSwitchNetwork() // 🔥 네트워크 확인 추가
       alert(`재판매를 위해 마켓플레이스 권한을 확인합니다.`)
-      // 현재 마켓플레이스에 권한이 부여되어 있는지 확인
       const isApproved = await nftContract.isApprovedForAll(
         account,
         MARKET_ADDRESS,
@@ -341,15 +383,15 @@ export default function Home() {
       alert('🎉 성공적으로 재판매 등록이 완료되었습니다!')
       fetchItems()
       fetchMyNFTs()
-      setCurrentTab('market') // 등록 후 마켓으로 이동
+      setCurrentTab('market')
     } catch (error: any) {
-      console.error(error)
-      alert(`재판매 등록 실패: ${error.reason || error.message}`)
+      handleTxError(error, '재판매 등록 실패') // 🔥 공통 에러 핸들링
     }
   }
 
   return (
     <div className='min-h-screen bg-gray-50 text-gray-900 font-sans'>
+      {/* Navbar 부분 그대로 유지 */}
       <nav className='bg-white shadow-md p-4 flex justify-between items-center sticky top-0 z-50'>
         <div className='flex space-x-6 items-center'>
           <h1
@@ -372,7 +414,6 @@ export default function Home() {
               >
                 마켓플레이스
               </button>
-              {/* 🔥 내 지갑 탭 추가 */}
               <button
                 onClick={() => {
                   fetchMyNFTs()
@@ -418,8 +459,8 @@ export default function Home() {
         </div>
       </nav>
 
+      {/* Main Content 이하 기존 렌더링 코드와 100% 동일 */}
       <main className='max-w-5xl mx-auto p-8'>
-        {/* Home, Mint, Faucet 탭 등은 이전과 완전히 동일하여 생략 없이 유지 */}
         {currentTab === 'home' && (
           <div className='text-center mt-20'>
             <h2 className='text-5xl font-extrabold mb-6 text-gray-800'>
@@ -541,7 +582,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* 🔥 신규: 내 지갑 (My NFTs) 화면 */}
         {currentTab === 'mywallet' && account && (
           <div className='mt-8'>
             <h2 className='text-3xl font-bold mb-8 text-black flex items-center'>
@@ -580,7 +620,6 @@ export default function Home() {
                       )}
                     </div>
 
-                    {/* 상태에 따른 버튼 렌더링 */}
                     {nft.isListed ? (
                       <button
                         onClick={() => handleCancelListing(nft.tokenId)}
@@ -603,7 +642,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* 기존 마켓플레이스 화면 */}
         {currentTab === 'market' && account && (
           <div className='mt-8'>
             <h2 className='text-3xl font-bold mb-8 text-black flex items-center'>
