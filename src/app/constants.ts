@@ -1,5 +1,5 @@
 // Remix에서 각 컨트랙트 배포 후 얻은 정보들입니다.
-export const TOKEN_ADDRESS = '0xdC88E0cfc0bFffcCb4E1c7aFF43eAFFB04021d48'
+export const TOKEN_ADDRESS = '0x657E4BC3FAAc521Ac94a2B946ce050Eb77EaEaF5'
 export const TOKEN_ABI = [
   {
     inputs: [
@@ -1063,7 +1063,7 @@ export const NFT_ABI = [
   },
 ]
 
-export const MARKET_ADDRESS = '0x1bAe41EbE6201789EdEB68580Adc6b84DCB861F2'
+export const MARKET_ADDRESS = '0x23094056F094EB9C48826Aa5b9C23c1acFE95A8d'
 export const MARKET_ABI = [
   {
     inputs: [
